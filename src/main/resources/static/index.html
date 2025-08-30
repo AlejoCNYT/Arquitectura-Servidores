@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>HTTP Server Demo</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Logo agregado -->
+        <div style="text-align:center; margin-bottom:20px;">
+            <img src="/static/images/logo.png" alt="HTTP Server Logo" style="max-width:150px; height:auto;">
+        </div>
+
+        <h1>HTTP Server Demo</h1>
+        
+        <h2>Hello Service</h2>
+        <form onsubmit="event.preventDefault(); loadGetMsg()">
+            <label for="name">Name:</label><br>
+            <input type="text" id="name" name="name" value="John"><br>
+            <button type="submit">Say Hello</button>
+        </form>
+        <div id="getrespmsg"></div>
+        
+        <h2>Stock Data Lookup</h2>
+        <form onsubmit="event.preventDefault(); fetchStockData()">
+            <label for="stockSymbol">Stock Symbol:</label><br>
+            <input type="text" id="stockSymbol" value="fb"><br>
+            <button type="submit">Get Stock Data</button>
+        </form>
+        <pre id="stockData"></pre>
+    </div>
+    
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

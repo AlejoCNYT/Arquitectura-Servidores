@@ -1,0 +1,65 @@
+# =========================
+# Java / Maven
+# =========================
+target/
+*.class
+*.log
+hs_err_pid*
+replay_pid*
+surefire-reports/
+failsafe-reports/
+
+# JAR/WAR/EAR generados
+*.jar
+*.war
+*.ear
+
+# =========================
+# IDEs
+# =========================
+# IntelliJ IDEA
+.idea/
+*.iml
+out/
+
+# NetBeans
+nbproject/
+nbproject/private/
+dist/
+build/
+
+# Eclipse
+.project
+.classpath
+.settings/
+
+# VS Code
+.vscode/
+
+# =========================
+# Node (si algún día sumas front)
+# =========================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# =========================
+# SO / Misceláneo
+# =========================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+*.tmp
+*.bak
+*.swp
+*.swo
+*.orig
+
+# =========================
+# Variables de entorno
+# =========================
+.env
+.env.*
+!.env.example
