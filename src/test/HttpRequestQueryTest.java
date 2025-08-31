@@ -1,5 +1,4 @@
-package com.mycompany.httpserver;
-
+import com.mycompany.httpserver.HttpRequest;
 import org.testng.annotations.Test;
 
 import java.net.URI;

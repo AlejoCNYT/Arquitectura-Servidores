@@ -1,5 +1,6 @@
-package com.mycompany.httpserver;
-
+import com.mycompany.httpserver.HttpRequest;
+import com.mycompany.httpserver.HttpResponse;
+import com.mycompany.httpserver.HttpServer;
 import org.junit.Test;
 import java.net.URI;
 import java.net.http.HttpClient;
