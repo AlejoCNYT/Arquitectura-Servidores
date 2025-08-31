@@ -1,16 +1,22 @@
 package com.mycompany.microframework.core;
 
-import com.mycompany.httpserver.HttpRequest;
 import com.mycompany.httpserver.HttpResponse;
 import com.mycompany.httpserver.HttpServer;
-
+import com.mycompany.httpserver.HttpRequest;
+import microframework.annotations.GetMapping;
+import microframework.annotations.RequestParam;
 
 import java.lang.reflect.*;
-import java.net.URLDecoder;
-import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * Registry minimal de rutas GET con soporte de @RequestParam.
+ * Cambios clave:
+ *  - Usa extractQueryMap(req) para obtener los parámetros de query
+ *    aprovechando HttpRequest#getQueryMap() / #getValue(), y
+ *    si no existe cae a parsear el path.
+ */
 public class RouteRegistry {
 
     private final Map<String, MethodBinding> routes = new ConcurrentHashMap<>();
@@ -19,6 +25,7 @@ public class RouteRegistry {
         final Object instance;
         final Method method;
         final Parameter[] params;
+
         MethodBinding(Object instance, Method method) {
             this.instance = instance;
             this.method = method;
@@ -28,7 +35,7 @@ public class RouteRegistry {
 
     public void register(Object controller) {
         for (Method m : controller.getClass().getDeclaredMethods()) {
-            microframework.annotations.GetMapping gm = m.getAnnotation(microframework.annotations.GetMapping.class);
+            GetMapping gm = m.getAnnotation(GetMapping.class);
             if (gm == null) continue;
             if (!m.getReturnType().equals(String.class)) {
                 throw new IllegalArgumentException("@GetMapping solo admite retorno String: " + m);
@@ -37,13 +44,8 @@ public class RouteRegistry {
             String path = normalize(gm.value());
             routes.put(path, new MethodBinding(controller, m));
 
-            System.out.println("[ioc] map GET " + path + " -> " +
-                    controller.getClass().getName() + "#" + m.getName());
-
+            // Conecta con tu HttpServer existente
             HttpServer.get(path, (HttpRequest req, HttpResponse resp) -> invoke(path, req, resp));
-            if (!path.endsWith("/")) {
-                HttpServer.get(path + "/", (HttpRequest req, HttpResponse resp) -> invoke(path, req, resp));
-            }
         }
     }
 
@@ -52,7 +54,9 @@ public class RouteRegistry {
         if (b == null) return "404 Not Found";
 
         Object[] args = new Object[b.params.length];
-        Map<String, String> query = extractQueryMap(req); // mapa si existe
+
+        // --- ANTES DE ITERAR PARÁMETROS (lo que pediste) ---
+        java.util.Map<String,String> query = extractQueryMap(req);
 
         for (int i = 0; i < b.params.length; i++) {
             Parameter p = b.params[i];
@@ -61,19 +65,13 @@ public class RouteRegistry {
             } else if (p.getType().equals(HttpResponse.class)) {
                 args[i] = resp;
             } else {
-                microframework.annotations.RequestParam rp = p.getAnnotation(microframework.annotations.RequestParam.class);
+                RequestParam rp = p.getAnnotation(RequestParam.class);
                 if (rp == null) {
-                    args[i] = null; // solo soportamos @RequestParam + HttpRequest/HttpResponse
+                    // Solo soportamos parámetros con @RequestParam (además de HttpRequest/HttpResponse)
+                    args[i] = null;
                 } else {
-                    String key = rp.value();
-                    String val = query.get(key);
-                    if (val == null) {
-                        // fallback: métodos (String)->String tipo getQueryParam/getParam/getValue/etc.
-                        val = extractSingleQueryValue(req, key);
-                    }
-                    if (val == null || val.isEmpty()) {
-                        val = rp.defaultValue();
-                    }
+                    // ---- DENTRO DEL LOOP (lo que pediste) ----
+                    String val = query.getOrDefault(rp.value(), rp.defaultValue());
                     args[i] = convert(val, p.getType());
                 }
             }
@@ -90,127 +88,83 @@ public class RouteRegistry {
         }
     }
 
-    /* ===================== extractores ===================== */
-
     private static String normalize(String p) {
         if (p == null || p.isEmpty()) return "/";
-        if (!p.startsWith("/")) p = "/" + p;
+        if (!p.startsWith("/")) return "/" + p;
         return p;
     }
 
-    /** Intenta obtener un Map<String,String> de la request mediante varios nombres/mecanismos. */
+    /** Obtiene el mapa de query de forma robusta (getQueryMap, getValues, o parseo del path). */
     @SuppressWarnings("unchecked")
-    private static Map<String, String> extractQueryMap(HttpRequest req) {
-        // 1) Métodos que retornan Map
-        for (String name : List.of("getQueryMap", "getQueryParams", "getParams", "params", "getParameters")) {
-            try {
-                Method m = req.getClass().getMethod(name);
-                Object o = m.invoke(req);
-                if (o instanceof Map) return toStringMap((Map<?, ?>) o);
-            } catch (Exception ignored) {}
-        }
-
-        // 2) Campos Map con nombres típicos
-        for (Field f : req.getClass().getDeclaredFields()) {
-            if (!Map.class.isAssignableFrom(f.getType())) continue;
-            String n = f.getName().toLowerCase(Locale.ROOT);
-            if (n.contains("query") || n.contains("param")) {
-                try {
-                    f.setAccessible(true);
-                    Object o = f.get(req);
-                    if (o instanceof Map) return toStringMap((Map<?, ?>) o);
-                } catch (Exception ignored) {}
+    private static Map<String,String> extractQueryMap(HttpRequest req) {
+        // 1) getQueryMap()
+        try {
+            Method m = req.getClass().getMethod("getQueryMap");
+            Object o = m.invoke(req);
+            if (o instanceof Map<?,?> map) {
+                Map<String,String> out = new HashMap<>();
+                for (Map.Entry<?,?> e : map.entrySet()) {
+                    out.put(String.valueOf(e.getKey()), e.getValue() == null ? "" : String.valueOf(e.getValue()));
+                }
+                return out;
             }
-        }
+        } catch (Exception ignored) {}
 
-        // 3) Strings de query
-        for (String name : List.of("getQueryString", "getQuery", "queryString", "query")) {
-            try {
-                Method m = req.getClass().getMethod(name);
-                Object o = m.invoke(req);
-                if (o instanceof String) return parseQueryString((String) o);
-            } catch (Exception ignored) {}
-        }
-
-        // 4) URI/target que contenga '?'
-        for (String name : List.of("getRequestTarget", "getUri", "uri", "requestTarget", "getPath", "path")) {
-            try {
-                Method m = req.getClass().getMethod(name);
-                Object o = m.invoke(req);
-                if (o instanceof String) {
-                    String s = (String) o;
-                    int q = s.indexOf('?');
-                    if (q >= 0 && q < s.length() - 1) {
-                        return parseQueryString(s.substring(q + 1));
-                    }
-                }
-            } catch (Exception ignored) {}
-        }
-
-        return Collections.emptyMap();
-    }
-
-    /** Si no hay Map, intenta métodos que acepten (String) y retornen el valor del query param. */
-    private static String extractSingleQueryValue(HttpRequest req, String key) {
-        // (String)->String típicos
-        for (String name : List.of(
-                "getQueryParam", "getQueryParameter", "getParameter", "getParam",
-                "queryParam", "param", "getValue", "get"
-        )) {
-            try {
-                Method m = req.getClass().getMethod(name, String.class);
-                Object o = m.invoke(req, key);
-                if (o != null) return String.valueOf(o);
-            } catch (Exception ignored) {}
-        }
-        // (String)->List<String> o String[]
-        for (String name : List.of("getParameterValues", "getParamValues", "queryParams")) {
-            try {
-                Method m = req.getClass().getMethod(name, String.class);
-                Object o = m.invoke(req, key);
-                if (o instanceof List && !((List<?>) o).isEmpty()) {
-                    Object first = ((List<?>) o).get(0);
-                    return first == null ? "" : String.valueOf(first);
-                }
-                if (o instanceof String[] arr && arr.length > 0) {
-                    return arr[0];
-                }
-            } catch (Exception ignored) {}
-        }
-        return null;
-    }
-
-    private static Map<String, String> toStringMap(Map<?, ?> in) {
-        Map<String, String> out = new HashMap<>();
-        for (Map.Entry<?, ?> e : in.entrySet()) {
-            String k = String.valueOf(e.getKey());
-            Object v = e.getValue();
-            if (v == null) {
-                out.put(k, "");
-            } else if (v instanceof List && !((List<?>) v).isEmpty()) {
-                out.put(k, String.valueOf(((List<?>) v).get(0)));
-            } else if (v.getClass().isArray()) {
-                Object[] arr = (Object[]) v;
-                out.put(k, arr.length > 0 ? String.valueOf(arr[0]) : "");
-            } else {
-                out.put(k, String.valueOf(v));
+        // 2) Construir usando getValues(String)/getValue(String) si existen y el path trae '?'
+        String pathWithQuery = safePath(req);
+        int q = pathWithQuery.indexOf('?');
+        if (q >= 0 && q < pathWithQuery.length() - 1) {
+            String qs = pathWithQuery.substring(q + 1);
+            Set<String> keys = new LinkedHashSet<>();
+            for (String pair : qs.split("&")) {
+                if (pair.isEmpty()) continue;
+                int eq = pair.indexOf('=');
+                String k = eq > 0 ? pair.substring(0, eq) : pair;
+                keys.add(urlDecode(k));
             }
+            Map<String,String> out = new HashMap<>();
+            for (String key : keys) {
+                String v = null;
+                for (String meth : new String[]{"getValues","getValue"}) {
+                    try {
+                        Method m = req.getClass().getMethod(meth, String.class);
+                        Object val = m.invoke(req, key);
+                        if (val != null) { v = String.valueOf(val); break; }
+                    } catch (Exception ignored) {}
+                }
+                if (v == null) v = "";
+                out.put(key, v);
+            }
+            if (!out.isEmpty()) return out;
         }
-        return out;
+
+        // 3) Fallback: parsear la query directamente del path
+        return parseQueryString(pathWithQuery);
     }
 
-    private static Map<String, String> parseQueryString(String qs) {
+    /** Intenta obtener la ruta completa del request */
+    private static String safePath(HttpRequest req) {
+        try {
+            Method m = req.getClass().getMethod("getPath");
+            Object v = m.invoke(req);
+            if (v != null) return v.toString();
+        } catch (Exception ignored) {}
+        return "/";
+    }
+
+    private static Map<String, String> parseQueryString(String path) {
+        int q = path.indexOf('?');
         Map<String, String> map = new HashMap<>();
-        if (qs == null || qs.isEmpty()) return map;
-        if (qs.startsWith("?")) qs = qs.substring(1);
-        for (String pair : qs.split("&")) {
-            if (pair.isEmpty()) continue;
+        if (q < 0 || q == path.length() - 1) return map;
+
+        String[] pairs = path.substring(q + 1).split("&");
+        for (String pair : pairs) {
             int eq = pair.indexOf('=');
             if (eq > 0) {
                 String k = urlDecode(pair.substring(0, eq));
                 String v = urlDecode(pair.substring(eq + 1));
                 map.put(k, v);
-            } else {
+            } else if (!pair.isEmpty()) {
                 map.put(urlDecode(pair), "");
             }
         }
@@ -218,15 +172,15 @@ public class RouteRegistry {
     }
 
     private static String urlDecode(String s) {
-        try { return URLDecoder.decode(s, StandardCharsets.UTF_8.name()); }
+        try { return java.net.URLDecoder.decode(s, java.nio.charset.StandardCharsets.UTF_8.name()); }
         catch (Exception e){ return s; }
     }
 
     private static Object convert(String v, Class<?> target) {
         if (target.equals(String.class)) return v;
-        if (target.equals(int.class) || target.equals(Integer.class)) return (v == null || v.isEmpty()) ? 0 : Integer.parseInt(v);
-        if (target.equals(long.class) || target.equals(Long.class)) return (v == null || v.isEmpty()) ? 0L : Long.parseLong(v);
+        if (target.equals(int.class) || target.equals(Integer.class)) return (v==null||v.isEmpty())?0:Integer.parseInt(v);
+        if (target.equals(long.class) || target.equals(Long.class)) return (v==null||v.isEmpty())?0L:Long.parseLong(v);
         if (target.equals(boolean.class) || target.equals(Boolean.class)) return Boolean.parseBoolean(v);
-        return v; // fallback
+        return v;
     }
 }
