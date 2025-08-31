@@ -103,6 +103,8 @@ src/
 mvn -q test
 ```
 <img width="1320" height="139" alt="imagen" src="https://github.com/user-attachments/assets/a38ed44c-2df6-402e-b903-1ee6d9d76dfb" />
+<img width="870" height="169" alt="imagen" src="https://github.com/user-attachments/assets/58e12273-c497-4e71-ae91-b829528ae1e2" />
+<img width="925" height="148" alt="imagen" src="https://github.com/user-attachments/assets/7e8c6a31-6679-4f56-8d9d-9efb842609db" />
 
 ---
 
