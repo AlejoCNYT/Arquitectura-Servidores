@@ -9,22 +9,22 @@ import java.util.List;
  * Arranca el HttpServer y registra controladores:
  *  1) Con args: carga solo esos FQCN (versión inicial).
  *  2) Sin args: escanea el paquete base (versión final).
- * IMPORTANTE: Registrar rutas ANTES de startServer().
+ * Importante: registrar rutas ANTES de startServer().
  */
 public class MicroSpringBoot {
 
     private static final String DEFAULT_BASE_PACKAGE = "com.mycompany.webapp";
-    private static final int DEFAULT_PORT = Integer.getInteger("PORT", 36000);
+    private static final int DEFAULT_PORT = Integer.getInteger("PORT", 35000);
 
     public static void main(String[] args) throws Exception {
-        // Sirve /resources/static (index.html, css, js, images)
+        // Estáticos
         HttpServer.staticfiles("/static");
 
-        // 1) Registrar rutas (ANTES de arrancar)
+        // 1) Registrar rutas primero
         RouteRegistry registry = new RouteRegistry();
 
         if (args != null && args.length > 0) {
-            // Versión inicial: cargar POJO(s) desde la línea de comandos
+            // Versión inicial: POJOs por argumento
             for (String fqcn : args) {
                 Object instance = newControllerInstance(fqcn);
                 ensureRestController(instance.getClass());
@@ -32,7 +32,7 @@ public class MicroSpringBoot {
                 System.out.println("[ioc] GET routes loaded from " + fqcn);
             }
         } else {
-            // Versión final: escanear el classpath
+            // Versión final: escaneo del paquete base
             List<Class<?>> controllers = ClassScanner.findControllers(DEFAULT_BASE_PACKAGE);
             for (Class<?> c : controllers) {
                 Object instance = newControllerInstance(c.getName());
@@ -45,7 +45,7 @@ public class MicroSpringBoot {
             }
         }
 
-        // 2) Arrancar servidor (DESPUÉS de registrar)
+        // 2) Arrancar servidor después
         HttpServer.startServer(new String[]{String.valueOf(DEFAULT_PORT)});
         System.out.println("[http] Listening at http://localhost:" + DEFAULT_PORT + "/");
     }
