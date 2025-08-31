@@ -11,7 +11,8 @@ import java.util.List;
  *  2) Sin args: escanea el paquete base (versión final).
  * Importante: registrar rutas ANTES de startServer().
  */
-public class MicroSpringBoot {
+public class MicroSpringBoot
+{
 
     private static final String DEFAULT_BASE_PACKAGE = "com.mycompany.webapp";
     private static final int DEFAULT_PORT = Integer.getInteger("PORT", 35000);
