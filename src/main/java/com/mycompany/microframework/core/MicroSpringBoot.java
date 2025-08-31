@@ -2,7 +2,6 @@ package com.mycompany.microframework.core;
 
 import com.mycompany.httpserver.HttpServer;
 
-
 import java.lang.reflect.Constructor;
 import java.util.List;
 
@@ -10,6 +9,7 @@ import java.util.List;
  * Arranca el HttpServer y registra controladores:
  *  1) Con args: carga solo esos FQCN (versión inicial).
  *  2) Sin args: escanea el paquete base (versión final).
+ * IMPORTANTE: Registrar rutas ANTES de startServer().
  */
 public class MicroSpringBoot {
 
@@ -20,35 +20,34 @@ public class MicroSpringBoot {
         // Sirve /resources/static (index.html, css, js, images)
         HttpServer.staticfiles("/static");
 
-        // Ajusta esta llamada según tu firma real del HttpServer:
-        HttpServer.startServer(new String[]{String.valueOf(DEFAULT_PORT)});
-        // Si tu HttpServer recibe int:  HttpServer.startServer(DEFAULT_PORT);
-
+        // 1) Registrar rutas (ANTES de arrancar)
         RouteRegistry registry = new RouteRegistry();
 
         if (args != null && args.length > 0) {
-            // Versión "primera": cargar un POJO desde la línea de comandos
+            // Versión inicial: cargar POJO(s) desde la línea de comandos
             for (String fqcn : args) {
                 Object instance = newControllerInstance(fqcn);
                 ensureRestController(instance.getClass());
                 registry.register(instance);
-                System.out.println("[ioc] registrado " + fqcn);
+                System.out.println("[ioc] GET routes loaded from " + fqcn);
             }
         } else {
-            // Versión "final": escanear el classpath
+            // Versión final: escanear el classpath
             List<Class<?>> controllers = ClassScanner.findControllers(DEFAULT_BASE_PACKAGE);
             for (Class<?> c : controllers) {
                 Object instance = newControllerInstance(c.getName());
                 ensureRestController(c);
                 registry.register(instance);
-                System.out.println("[ioc] registrado (scan) " + c.getName());
+                System.out.println("[ioc] GET routes loaded (scan) " + c.getName());
             }
             if (controllers.isEmpty()) {
-                System.out.println("[ioc] No se encontraron @RestController en " + DEFAULT_BASE_PACKAGE);
+                System.out.println("[ioc] No @RestController found under " + DEFAULT_BASE_PACKAGE);
             }
         }
 
-        System.out.println("[http] Server listo en http://localhost:" + DEFAULT_PORT + "/");
+        // 2) Arrancar servidor (DESPUÉS de registrar)
+        HttpServer.startServer(new String[]{String.valueOf(DEFAULT_PORT)});
+        System.out.println("[http] Listening at http://localhost:" + DEFAULT_PORT + "/");
     }
 
     private static Object newControllerInstance(String fqcn) throws Exception {

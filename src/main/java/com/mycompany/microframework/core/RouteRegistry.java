@@ -1,15 +1,16 @@
 package com.mycompany.microframework.core;
 
+import com.mycompany.httpserver.HttpRequest;
 import com.mycompany.httpserver.HttpResponse;
 import com.mycompany.httpserver.HttpServer;
-import com.mycompany.httpserver.HttpRequest;
-import microframework.annotations.GetMapping;
-import microframework.annotations.RequestParam;
 
-
-import java.lang.annotation.Annotation;
-import java.lang.reflect.*;
-import java.util.*;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.lang.reflect.Parameter;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class RouteRegistry {
@@ -20,7 +21,6 @@ public class RouteRegistry {
         final Object instance;
         final Method method;
         final Parameter[] params;
-
         MethodBinding(Object instance, Method method) {
             this.instance = instance;
             this.method = method;
@@ -30,7 +30,7 @@ public class RouteRegistry {
 
     public void register(Object controller) {
         for (Method m : controller.getClass().getDeclaredMethods()) {
-            GetMapping gm = m.getAnnotation(GetMapping.class);
+            microframework.annotations.GetMapping gm = m.getAnnotation(microframework.annotations.GetMapping.class);
             if (gm == null) continue;
             if (!m.getReturnType().equals(String.class)) {
                 throw new IllegalArgumentException("@GetMapping solo admite retorno String: " + m);
@@ -39,8 +39,15 @@ public class RouteRegistry {
             String path = normalize(gm.value());
             routes.put(path, new MethodBinding(controller, m));
 
-            // Conecta con tu HttpServer existente
+            // Log y doble mapeo con/sin slash final
+            System.out.println("[ioc] map GET " + path + " -> " +
+                    controller.getClass().getName() + "#" + m.getName());
+
             HttpServer.get(path, (HttpRequest req, HttpResponse resp) -> invoke(path, req, resp));
+            if (!path.endsWith("/")) {
+                String alt = path + "/";
+                HttpServer.get(alt, (HttpRequest req, HttpResponse resp) -> invoke(path, req, resp));
+            }
         }
     }
 
@@ -49,7 +56,7 @@ public class RouteRegistry {
         if (b == null) return "404 Not Found";
 
         Object[] args = new Object[b.params.length];
-        Map<String, String> query = parseQueryString(safePath(req));
+        Map<String, String> query = parseQueryString(getFullPath(req));
 
         for (int i = 0; i < b.params.length; i++) {
             Parameter p = b.params[i];
@@ -58,10 +65,9 @@ public class RouteRegistry {
             } else if (p.getType().equals(HttpResponse.class)) {
                 args[i] = resp;
             } else {
-                RequestParam rp = p.getAnnotation(RequestParam.class);
+                microframework.annotations.RequestParam rp = p.getAnnotation(microframework.annotations.RequestParam.class);
                 if (rp == null) {
-                    // Solo soportamos parámetros con @RequestParam (además de HttpRequest/HttpResponse)
-                    args[i] = null;
+                    args[i] = null; // solo soportamos @RequestParam + HttpRequest/HttpResponse
                 } else {
                     String name = rp.value();
                     String val = query.getOrDefault(name, rp.defaultValue());
@@ -83,24 +89,23 @@ public class RouteRegistry {
 
     private static String normalize(String p) {
         if (p == null || p.isEmpty()) return "/";
-        if (!p.startsWith("/")) return "/" + p;
+        if (!p.startsWith("/")) p = "/" + p;
         return p;
     }
 
-    /** Intenta obtener la ruta completa del request */
-    private static String safePath(HttpRequest req) {
+    private static String getFullPath(HttpRequest req) {
         try {
-            // Implementación común en esta kata
             Method m = req.getClass().getMethod("getPath");
             Object v = m.invoke(req);
-            if (v != null) return v.toString();
-        } catch (Exception ignored) {}
-        return "/";
+            return v != null ? v.toString() : "/";
+        } catch (Exception ignored) {
+            return "/";
+        }
     }
 
     private static Map<String, String> parseQueryString(String path) {
-        int q = path.indexOf('?');
         Map<String, String> map = new HashMap<>();
+        int q = path.indexOf('?');
         if (q < 0 || q == path.length() - 1) return map;
         String[] pairs = path.substring(q + 1).split("&");
         for (String pair : pairs) {
@@ -117,16 +122,15 @@ public class RouteRegistry {
     }
 
     private static String urlDecode(String s) {
-        try { return java.net.URLDecoder.decode(s, java.nio.charset.StandardCharsets.UTF_8.name()); }
+        try { return URLDecoder.decode(s, StandardCharsets.UTF_8.name()); }
         catch (Exception e){ return s; }
     }
 
     private static Object convert(String v, Class<?> target) {
         if (target.equals(String.class)) return v;
-        if (target.equals(int.class) || target.equals(Integer.class)) return (v==null||v.isEmpty())?0:Integer.parseInt(v);
-        if (target.equals(long.class) || target.equals(Long.class)) return (v==null||v.isEmpty())?0L:Long.parseLong(v);
+        if (target.equals(int.class) || target.equals(Integer.class)) return (v == null || v.isEmpty()) ? 0 : Integer.parseInt(v);
+        if (target.equals(long.class) || target.equals(Long.class)) return (v == null || v.isEmpty()) ? 0L : Long.parseLong(v);
         if (target.equals(boolean.class) || target.equals(Boolean.class)) return Boolean.parseBoolean(v);
-        // Se pueden añadir más conversiones si lo deseas
-        return v;
+        return v; // fallback
     }
 }
