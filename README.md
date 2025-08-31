@@ -102,6 +102,7 @@ src/
 ```bash
 mvn -q test
 ```
+<img width="1320" height="139" alt="imagen" src="https://github.com/user-attachments/assets/a38ed44c-2df6-402e-b903-1ee6d9d76dfb" />
 
 ---
 
